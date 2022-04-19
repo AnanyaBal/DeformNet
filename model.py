@@ -6,7 +6,7 @@ import torch.optim as optim
 import pdb
 
 class Encoder(nn.Module):
-    def __init__(self)::
+    def __init__(self):
         super(cls_model, self).__init__()
         self.layers_common = nn.Sequential(nn.Linear(3, 64),
                                     nn.ReLU(),
@@ -44,18 +44,23 @@ class Encoder(nn.Module):
         return  cond_bottleneck_mu, cond_bottleneck_sig
 
 
-
-
-
 class Decoder(nn.Module):
-    def __init__(self, latent_dim, output_shape):
+    def __init__(self, latent_dim, output_shape, num_points):
         super().__init__()
-        
+        self.fc = nn.Sequential(
+        			nn.Linear(latent_dim, 512),
+        			nn.ReLU(),
+        			nn.BatchNorm1d(512),
+        			nn.Linear(512, num_points*3),
+        			nn.ReLU(),
+        			nn.BatchNorm1d(num_points*3),
+        			)
 
     def forward(self, z):
-        
+        out = self.fc(z)
+        return 
 
-class AEModel(nn.Module):
+class MeshVAEModel(nn.Module):
     def __init__(self, latent_size, input_shape = (3, 32, 32)):
         super().__init__()
   

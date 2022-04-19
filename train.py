@@ -4,10 +4,41 @@ import torch
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
-from models import cls_model, seg_model,pt_net_model
-from data_loader import get_data_loader
-from utils import save_checkpoint, create_dir
-import pdb
+from model import MeshVAEModel
+# from data_loader import get_data_loader
+# from utils import save_checkpoint, create_dir
+import ipdb
+
+from pytorch3d.utils import ico_sphere
+from pytorch3d.structures import Meshes
+import glob
+from mesh_loader import *
+def get_dataset(data_path):
+
+    deformed_path = data_path+'deformed/*.obj'
+    undeformed_path = data_path+'undeformed/*.obj'
+
+    verts_undeformed = []
+    verts_deformed = []
+
+    for f in sorted(glob.glob(undeformed_path)):
+        ipdb.set_trace()
+        verts,faces = load_mesh(f)
+        mesh = get_mesh(verts,faces)
+        verts = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
+        verts_undeformed.append(verts)
+    # verts_undeformed = torch.Tensor(verts_undeformed)
+
+    for f in sorted(glob.glob(deformed_path)):
+        verts,faces = load_mesh(f)
+        mesh = get_mesh(verts,faces)
+        verts = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
+        verts_deformed.append(verts)
+    # verts_deformed = torch.Tensor(verts_deformed)
+
+    return verts_undeformed,verts_deformed
+
+
 
 def train(train_dataloader, model, opt, epoch, args, writer):
     
@@ -29,7 +60,7 @@ def train(train_dataloader, model, opt, epoch, args, writer):
             
         # Compute Loss
         criterion = torch.nn.CrossEntropyLoss()
-        # pdb.set_trace()
+        # ipdb.set_trace()
         loss = criterion(predictions.float(), labels)
         epoch_loss += loss
 
@@ -121,6 +152,12 @@ def main(args):
     train_dataloader = get_data_loader(args=args, train=True)
     test_dataloader = get_data_loader(args=args, train=False)
 
+    #============================Addition===============================
+    mesh_src = ico_sphere(4,'cuda')
+    # verts = 
+    mesh_tgt = Meshes(verts=[feed_cuda['verts']], faces=[feed_cuda['faces']])
+    #============================Addition End===============================
+
     print ("successfully loaded data")
 
     best_acc = -1
@@ -160,6 +197,7 @@ def create_parser():
     # Model & Data hyper-parameters
     parser.add_argument('--task', type=str, default="cls", help='The task: cls or seg')
     parser.add_argument('--num_seg_class', type=int, default=6, help='The number of segmentation classes')
+    parser.add_argument('--data_path', type=str, default='/home/ananya/DeformNet/data/', help='root folder for data')
 
     # Training hyper-parameters
     parser.add_argument('--num_epochs', type=int, default=250)
@@ -186,4 +224,5 @@ if __name__ == '__main__':
     args.device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
     args.checkpoint_dir = args.checkpoint_dir+"/"+args.task # checkpoint directory is task specific
 
-    main(args)
+    undeformed_verts, deformed_verts = get_dataset(args.data_path)
+    ipdb.set_trace()
