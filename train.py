@@ -13,63 +13,110 @@ from pytorch3d.utils import ico_sphere
 from pytorch3d.structures import Meshes
 import glob
 from mesh_loader import *
+from losses import *
+from torch.utils.tensorboard import SummaryWriter
+
 def get_dataset(data_path):
 
     deformed_path = data_path+'deformed/*.obj'
     undeformed_path = data_path+'undeformed/*.obj'
 
-    verts_undeformed = []
-    verts_deformed = []
+    verts_list = []
+    faces_list = []
 
     for f in sorted(glob.glob(undeformed_path)):
-        ipdb.set_trace()
-        verts,faces = load_mesh(f)
-        mesh = get_mesh(verts,faces)
-        verts = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
-        verts_undeformed.append(verts)
-    # verts_undeformed = torch.Tensor(verts_undeformed)
 
-    for f in sorted(glob.glob(deformed_path)):
         verts,faces = load_mesh(f)
-        mesh = get_mesh(verts,faces)
-        verts = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
-        verts_deformed.append(verts)
+        verts_list.append(verts)
+        faces_list.append(faces)
+    mesh = get_mesh(verts_list,faces_list)
+    verts_undeformed    = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
+
+    # verts_undeformed = torch.Tensor(verts_undeformed)
+    verts_list =  []
+    faces_list =  []
+    cond_vector = []
+    for idx,f in enumerate(sorted(glob.glob(deformed_path))):
+
+        verts,faces = load_mesh(f)
+        verts_list.append(verts)
+        faces_list.append(faces)
+        # cond_vector.append(read_csv(idx))
+
+    mesh = get_mesh(verts_list,faces_list)
+    verts_deformed    = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
+
+
+    #Repeating for the deformed dataset
+
+    verts_undeformed = verts_undeformed.repeat(verts_deformed.shape[0],1,1)
     # verts_deformed = torch.Tensor(verts_deformed)
+
 
     return verts_undeformed,verts_deformed
 
 
 
-def train(train_dataloader, model, opt, epoch, args, writer):
+# def train(train_dataloader, model, opt, epoch, args, writer):
+def train(model):
     
     model.train()
-    step = epoch*len(train_dataloader)
+    # step = epoch*len(train_dataloader)
     epoch_loss = 0
+    viz_data = True
+    opt = optim.Adam(model.parameters(), 0.001, betas=(0.9, 0.999))
+    # ipdb.set_trace()
+    verts_undeformed,verts_deformed = get_dataset(args.data_path)
+    count = 0
+    epoch_loss_list = []
 
-    for i, batch in enumerate(train_dataloader):
-        point_clouds, labels = batch
-        point_clouds = point_clouds.to(args.device)
-        labels = labels.to(args.device).to(torch.long)
+    c1 = torch.tensor([[1.,1.,0]]).unsqueeze(0).repeat(1,2000,1)
+    c2 = torch.tensor([[1.,0,1.]]).unsqueeze(0).repeat(1,2000,1)
+    c3 = torch.tensor([[0,1.,1.]]).unsqueeze(0).repeat(1,2000,1)
+    color_all = torch.cat((c1,c3),dim=1)
 
-        # ------ TO DO: Forward Pass ------
-        predictions = model(point_clouds)
+    for epoch in range(100):
+        print("Epoch: ",epoch)
+        epoch_loss = 0
+        for i, batch in enumerate(range(verts_deformed.shape[0])):
+            # ipdb.set_trace()
+            # verts_undeformed, verts_deformed =verts_deformed_total, verts_undeformed_total
 
-        if (args.task == "seg"):
-            labels = labels.reshape([-1])
-            predictions = predictions.reshape([-1, args.num_seg_class])
-            
-        # Compute Loss
-        criterion = torch.nn.CrossEntropyLoss()
-        # ipdb.set_trace()
-        loss = criterion(predictions.float(), labels)
-        epoch_loss += loss
+            verts_undeformed = verts_undeformed.to(args.device)
+            verts_deformed = verts_deformed.to(args.device)
+            # ------ TO DO: Forward Pass ------
+            predictions,latent_mean,latent_var = model(verts_undeformed)
+            if viz_data and i==0 and epoch%10==0:
+                viz_pointcloud(verts_deformed[20],'pc_deformed_{}'.format(epoch))
+                viz_pointcloud(verts_undeformed[20],'pc_undeformed_{}'.format(epoch))
+                viz_pointcloud(predictions[20].detach(),'pc_predicted_{}'.format(epoch))
+                
+                pc_total = torch.cat((verts_deformed[20],predictions[20].detach()),dim=0)
+                viz_pointcloud(pc_total,'pc_combined_{}'.format(epoch),color_all)
 
-        # Backward and Optimize
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
 
-        writer.add_scalar('train_loss', loss.item(), step+i)
+            # Compute Loss
+            chamfer_loss_ = chamfer_loss(predictions,verts_deformed)
+            kl_loss_ = kl_loss(latent_mean,latent_var)
+            # ipdb.set_trace()
+            loss_total = chamfer_loss_#+kl_loss_
+            epoch_loss += loss_total
+            epoch_loss_list.append(loss_total.item())
+            # Backward and Optimize
+            opt.zero_grad()
+            loss_total.backward()
+            opt.step()
+            count += 1
+
+        # writer.add_scalar('train_loss', loss.item(), step+i)
+        print("loss total: ",epoch_loss)
+    count_idx = np.arange(0,count)
+    ipdb.set_trace()
+    plt.plot(count_idx,epoch_loss_list)
+    plt.show()
+
+
+
 
     return epoch_loss
 
@@ -197,7 +244,7 @@ def create_parser():
     # Model & Data hyper-parameters
     parser.add_argument('--task', type=str, default="cls", help='The task: cls or seg')
     parser.add_argument('--num_seg_class', type=int, default=6, help='The number of segmentation classes')
-    parser.add_argument('--data_path', type=str, default='/home/ananya/DeformNet/data/', help='root folder for data')
+    parser.add_argument('--data_path', type=str, default='/home/cobra/abhimanyu_course/deformation/data/', help='root folder for data')
 
     # Training hyper-parameters
     parser.add_argument('--num_epochs', type=int, default=250)
@@ -225,4 +272,6 @@ if __name__ == '__main__':
     args.checkpoint_dir = args.checkpoint_dir+"/"+args.task # checkpoint directory is task specific
 
     undeformed_verts, deformed_verts = get_dataset(args.data_path)
+    model = MeshVAEModel().cuda()
+    train(model)
     ipdb.set_trace()
