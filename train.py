@@ -15,6 +15,7 @@ import glob
 from mesh_loader import *
 from losses import *
 from torch.utils.tensorboard import SummaryWriter
+
 import csv
 import os 
 
@@ -41,6 +42,7 @@ def read_conditioning_params(idx, csvreader):
     # ipdb.set_trace()
 
     return torch.tensor(cond_params_batch)
+
 
 def get_dataset(data_path):
 
@@ -71,9 +73,6 @@ def get_dataset(data_path):
 
     mesh = get_mesh(verts_list,faces_list)
     verts_deformed    = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
-
-
-    #Repeating for the deformed dataset
 
     verts_undeformed = verts_undeformed.repeat(verts_deformed.shape[0],1,1)
     # verts_deformed = torch.Tensor(verts_deformed)
@@ -174,7 +173,6 @@ def train(model, csvreader):
     #ipdb.set_trace()
     plt.plot(count_idx,epoch_loss_list)
     plt.show()
-
 
     return epoch_loss
 
@@ -304,6 +302,7 @@ def create_parser():
     parser.add_argument('--num_seg_class', type=int, default=6, help='The number of segmentation classes')
     parser.add_argument('--data_path', type=str, default='/home/ananya/DeformNet-master/data/', help='root folder for data')
 
+
     # Training hyper-parameters
     parser.add_argument('--num_epochs', type=int, default=250)
     parser.add_argument('--batch_size', type=int, default=32, help='The number of images in a batch.')
@@ -335,4 +334,5 @@ if __name__ == '__main__':
     undeformed_verts, deformed_verts = get_dataset(args.data_path)
     model = MeshVAEModel().cuda()
     train(model, csvreader)
-    # ipdb.set_trace()
+    ipdb.set_trace()
+
