@@ -20,12 +20,12 @@ import csv
 import os 
 
 
-def read_conditioning_params(idx, csvreader):
+def read_conditioning_params(idx):
     idx = [ i+2 for i in idx]
-    # file = open('DeformNet Data Details - Ansys - Sheet1.csv')
-    # print('reading CSV')
-    # # ipdb.set_trace()   
-    # csvreader = csv.reader(file)
+    file = open('DeformNet Data Details - Ansys - Sheet1.csv')
+    print('reading CSV')
+    # ipdb.set_trace()   
+    csvreader = csv.reader(file)
     counter = 0
     rows = []
 
@@ -103,7 +103,7 @@ def find_closest_vertex(verts_undeformed, verts_deformed, x, y, z):
 
 
 # def train(train_dataloader, model, opt, epoch, args, writer):
-def train(model, csvreader):
+def train(model):
     
     # ipdb.set_trace()
     model.train()
@@ -132,7 +132,7 @@ def train(model, csvreader):
             verts_undeformed = verts_undeformed.to(args.device)
             verts_deformed = verts_deformed.to(args.device)
 
-            cond_params = read_conditioning_params((i+1)*idx_it, csvreader)
+            cond_params = read_conditioning_params((i+1)*idx_it)
             # ipdb.set_trace()
 
             closest_vertices_undeformed = torch.tensor(find_closest_vertex(verts_undeformed, verts_deformed, 
@@ -325,14 +325,12 @@ def create_parser():
 if __name__ == '__main__':
     parser = create_parser()
     args = parser.parse_args()
-    file = open('DeformNet Data Details - Ansys - Sheet1.csv')
-    print('reading CSV')
-    csvreader = csv.reader(file)
+
     args.device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
     args.checkpoint_dir = args.checkpoint_dir+"/"+args.task # checkpoint directory is task specific
     # ipdb.set_trace()
     undeformed_verts, deformed_verts = get_dataset(args.data_path)
     model = MeshVAEModel().cuda()
-    train(model, csvreader)
+    train(model)
     ipdb.set_trace()
 
