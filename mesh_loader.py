@@ -15,6 +15,8 @@ import ipdb
 import imageio
 import tqdm
 import matplotlib.pyplot as plt
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 def get_device():
 	"""

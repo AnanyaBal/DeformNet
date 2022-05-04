@@ -4,6 +4,9 @@ import torch.nn as nn
 import torch.utils.data as data
 import torch.optim as optim
 import ipdb
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 
 class Encoder(nn.Module):
     def __init__(self):

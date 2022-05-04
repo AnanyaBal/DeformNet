@@ -2,6 +2,9 @@ import torch
 import ipdb
 import pytorch3d
 from pytorch3d import loss
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 
 def chamfer_loss(point_cloud_src,point_cloud_tgt):
 	# loss_chamfer = 

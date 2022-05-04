@@ -15,6 +15,9 @@ import glob
 from mesh_loader import *
 from losses import *
 from torch.utils.tensorboard import SummaryWriter
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
 
 def get_dataset(data_path):
 

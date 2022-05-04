@@ -10,7 +10,9 @@ import torch.nn.functional as F
 from torchvision.utils import make_grid
 from matplotlib import pyplot as plt
 import time
+# import os
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = 1
 
 def get_dataloaders(batch_size = 256):
     
