@@ -36,18 +36,21 @@ class Encoder(nn.Module):
                                     nn.Linear(1024,2048),
                                     nn.ReLU(),)
 
-    def forward(self, points, young_mod=1, pois_ratio=0.5, force=500, PoA_x = 0.1, PoA_y = 0.1, PoA_z = 0.1):
+
+    def forward(self, points, young_mod, pois_ratio, force, PoA_v):
+
         
         B = points.shape[0]
         N = points.shape[1]
         shape = B*N
 
-        young_mod  = torch.Tensor([young_mod])
-        pois_ratio = torch.Tensor([pois_ratio])
-        force = torch.Tensor([force])
-        PoA_x = torch.Tensor([PoA_x])
-        PoA_y = torch.Tensor([PoA_y])
-        PoA_z = torch.Tensor([PoA_z])
+
+        # young_mod  = torch.Tensor([young_mod])
+        # pois_ratio = torch.Tensor([pois_ratio])
+        # force = torch.Tensor([force])
+        # PoA_x = torch.Tensor([PoA_x])
+        # PoA_y = torch.Tensor([PoA_y])
+        # PoA_z = torch.Tensor([PoA_z])
 
         points = points.cuda()
         points_reshaped = points.view(shape, 3)
@@ -56,12 +59,13 @@ class Encoder(nn.Module):
         x = x.amax(dim=1)
         bottleneck_mu, bottleneck_sig = x[:, 0:1024], x[:, 1024:] 		#split into mu and sigma
 
-        conditional_vec_mean = torch.cat((young_mod.repeat(B,1), pois_ratio.repeat(B,1), 
-                                     force.repeat(B,1), PoA_x.repeat(B,1), 
-                                     PoA_y.repeat(B,1), PoA_z.repeat(B,1)),dim=1).cuda()
 
+        conditional_vec_mean = torch.cat((young_mod.unsqueeze(-1), pois_ratio.unsqueeze(-1), 
+                                     force.unsqueeze(-1), PoA_v.unsqueeze(-1)),dim=1).cuda()
+        # ipdb.set_trace()
         conditional_vec_var = torch.cat((0.1*torch.ones(B,1),0.1*torch.ones(B,1),0.1*torch.ones(B,1),
-                                         0.1*torch.ones(B,1),0.1*torch.ones(B,1),0.1*torch.ones(B,1)),dim=1).cuda()
+                                         1*torch.ones(B,1)),dim=1).cuda()
+
         # ipdb.set_trace()
 
         cond_bottleneck_mu = torch.cat((bottleneck_mu, conditional_vec_mean),dim=1)
@@ -92,7 +96,9 @@ class Decoder(nn.Module):
         return out
 
 class MeshVAEModel(nn.Module):
-    def __init__(self, latent_size=1030, input_shape = (3, 32, 32)):
+
+    def __init__(self, latent_size=1028, input_shape = (3, 32, 32)):
+
         super().__init__()
   
 
@@ -102,10 +108,12 @@ class MeshVAEModel(nn.Module):
         self.encoder = Encoder()
         self.decoder = Decoder(latent_size, input_shape)
 
-    def forward(self,x):
-        x_mean, x_var = self.encoder(x)
-        eps = torch.normal(mean = torch.ones_like(x_mean).cuda())
 
+    def forward(self,x, young_mod, pois_ratio, force, PoA_v):
+        x_mean, x_var = self.encoder(x, young_mod, pois_ratio, force, PoA_v)
+
+        eps = torch.normal(mean = torch.ones_like(x_mean).cuda())
+        # ipdb.set_trace()
         latent = x_mean+torch.exp(x_var/2)*eps
         x = self.decoder(latent)
         # ipdb.set_trace()
