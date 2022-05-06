@@ -37,7 +37,7 @@ class Encoder(nn.Module):
                                     nn.ReLU(),)
 
 
-    def forward(self, points, young_mod, pois_ratio, force, PoA_v):
+    def forward(self, points, force, PoA_v, young_mod, pois_ratio):
 
         
         B = points.shape[0]
@@ -60,9 +60,9 @@ class Encoder(nn.Module):
         bottleneck_mu, bottleneck_sig = x[:, 0:1024], x[:, 1024:] 		#split into mu and sigma
 
 
-        conditional_vec_mean = torch.cat((young_mod.unsqueeze(-1), pois_ratio.unsqueeze(-1), 
-                                     force.unsqueeze(-1), PoA_v.unsqueeze(-1)),dim=1).cuda()
         # ipdb.set_trace()
+        conditional_vec_mean = torch.cat((young_mod, pois_ratio, 
+                                     force, PoA_v),dim=1).cuda()
         conditional_vec_var = torch.cat((0.1*torch.ones(B,1),0.1*torch.ones(B,1),0.1*torch.ones(B,1),
                                          1*torch.ones(B,1)),dim=1).cuda()
 
@@ -119,3 +119,24 @@ class MeshVAEModel(nn.Module):
         # ipdb.set_trace()
         return x, x_mean, x_var
     
+class DeformNet(nn.Module):
+
+    def __init__(self, cycle_consistency=False):
+
+        super().__init__()
+
+        self.cycle_consistency = cycle_consistency
+        self.meshvae = MeshVAEModel()
+
+    def forward(self,x, young_mod, pois_ratio, force, PoA_v):
+
+        if self.cycle_consistency:
+
+            x_p, x_mean_p, x_var_p = self.meshvae(x, young_mod, pois_ratio, force, PoA_v)
+            x_recon,x_mean_recon,x_var_recon = self.meshvae(x_p, young_mod, pois_ratio, -force, PoA_v)
+
+            return x_recon,x_mean_recon,x_var_recon,x_p,x_mean_p,x_var_p
+        else:
+
+            x_p, x_mean_p, x_var_p = self.meshvae(x, young_mod, pois_ratio, force, PoA_v)
+            return x_p,x_mean_p,x_var_p

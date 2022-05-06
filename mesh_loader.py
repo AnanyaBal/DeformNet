@@ -42,6 +42,14 @@ def load_mesh(path):
 	verts = verts / scale
 	return verts, faces
 
+def normalize_pc(verts):
+
+	center = verts.mean(1)
+	verts = verts - center.unsqueeze(1).repeat(1,verts.shape[1],1)
+	scale = torch.max(verts.abs().max(1)[0],dim=1)[0].reshape(-1,1,1)
+	verts = verts / scale.repeat(1,verts.shape[1],verts.shape[2])
+	return verts
+
 def get_mesh(verts,faces):
 	# ipdb.set_trace()
 	return pytorch3d.structures.Meshes(verts, faces)
@@ -174,7 +182,7 @@ def gif_maker(im_list,name=None):
 	if name is None:
 		imageio.mimsave('mesh_turntable_undeformed.gif', my_images, fps=15)
 	else:
-		imageio.mimsave('{}.gif'.format(name), my_images, fps=15)
+		imageio.mimsave('/home/cobra/abhimanyu_course/deformation/output/{}.gif'.format(name), my_images, fps=15)
 
 
 if __name__ == "__main__":
