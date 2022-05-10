@@ -16,6 +16,7 @@ import imageio
 import tqdm
 import matplotlib.pyplot as plt
 import os
+import transforms3d as t3d
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 def get_device():
@@ -56,6 +57,14 @@ def load_mesh(path):
 def get_mesh(verts,faces):
 	# ipdb.set_trace()
 	return pytorch3d.structures.Meshes(verts, faces)
+
+def rotate_pc(points,rx,ry,rz):
+    R = t3d.euler.euler2mat(rx,ry,rz,axes='sxyz')
+    R = torch.tensor(R).cuda()
+    # pdb.set_trace()
+    points_rotated = R@points.transpose(1,2).cuda().double()
+
+    return points_rotated.transpose(1,2)
 
 def get_mesh_renderer(image_size=512, lights=None, device=None):
 

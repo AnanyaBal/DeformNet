@@ -197,7 +197,7 @@ class Decoder(nn.Module):
     def __init__(self, latent_dim, output_shape, num_points=5000):
         super(Decoder, self).__init__()
         self.fc = nn.Sequential(
-                    nn.Linear(latent_dim, 2048),
+                    nn.Linear(1028, 2048),
                     nn.ReLU(),
                     nn.Linear(2048, 2048),
                     nn.ReLU(),
@@ -217,16 +217,20 @@ class Decoder(nn.Module):
 
 class MeshVAEModel(nn.Module):
 
-    def __init__(self, latent_size=1028, input_shape = (3, 32, 32)):
+    def __init__(self, latent_size=1028, input_shape = (3, 32, 32),pointnet=True):
 
         super().__init__()
   
 
         self.input_shape = input_shape
         self.latent_size = latent_size
-        
-        # self.encoder = Encoder()
-        self.encoder = Encoder_PointnetPlusPlus()
+        pointnet=False
+        if pointnet:
+            self.encoder = Encoder()
+            print("Loading PointNet")
+        else:
+            self.encoder = Encoder_PointnetPlusPlus()
+            print("Loading PointNet++")
         self.decoder = Decoder(latent_size, input_shape)
 
 
@@ -242,22 +246,21 @@ class MeshVAEModel(nn.Module):
     
 class DeformNet(nn.Module):
 
-    def __init__(self, cycle_consistency=False):
+    def __init__(self, cycle_consistency=False,pointnet=True):
 
         super().__init__()
 
         self.cycle_consistency = cycle_consistency
-        self.meshvae = MeshVAEModel()
+        self.meshvae = MeshVAEModel(pointnet)
 
     def forward(self,x, young_mod, pois_ratio, force, PoA_v):
 
         if self.cycle_consistency:
-
+            # print("Loading cycle_consistency")
             x_p, x_mean_p, x_var_p = self.meshvae(x, young_mod, pois_ratio, force, PoA_v)
             x_recon,x_mean_recon,x_var_recon = self.meshvae(x_p, young_mod, pois_ratio, -force, PoA_v)
 
             return x_recon,x_mean_recon,x_var_recon,x_p,x_mean_p,x_var_p
         else:
-
             x_p, x_mean_p, x_var_p = self.meshvae(x, young_mod, pois_ratio, force, PoA_v)
             return x_p,x_mean_p,x_var_p

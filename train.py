@@ -20,6 +20,9 @@ from torch.utils.tensorboard import SummaryWriter
 import csv
 import os 
 import tqdm
+import copy
+from pytorch3d.io import load_obj, load_ply
+
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -50,8 +53,19 @@ def read_conditioning_params():
 
     return torch.tensor(cond_params_batch)
 
-def get_dataset(data_path,shapes=['cube']):
+def get_dataset(data_path,shapes=['cube'],):
 
+    test_idx = []
+    total_idx = [i for i in range(432)]
+    for ti in range(18):
+        test_idx += [5+(24*ti),11+(24*ti),19+(24*ti),23+(24*ti)]
+    train_idx  = copy.deepcopy(total_idx)
+
+    for item in train_idx:
+        if item in test_idx:
+            train_idx.remove(item)
+    # ipdb.set_trace()
+    data_aug = True
     if shapes is None:
         shapes = ['prism','cube','cyl']
 
@@ -67,8 +81,8 @@ def get_dataset(data_path,shapes=['cube']):
         verts_undeformed = torch.cat(( undeformed_list[0],undeformed_list[1],undeformed_list[2]),dim=0)
         verts_deformed = torch.cat((deformed_list[0],deformed_list[1],deformed_list[2]),dim=0)
 
-    cond_params = read_conditioning_params()[:verts_deformed.shape[0]]
     # ipdb.set_trace()
+    cond_params = read_conditioning_params()[:verts_deformed.shape[0]]
 
     verts_deformed,_,_ = normalize_mesh(verts_deformed)
     verts_undeformed,center,scale = normalize_mesh(verts_undeformed)
@@ -77,9 +91,60 @@ def get_dataset(data_path,shapes=['cube']):
     pr = cond_params[:,1].unsqueeze(-1)
     force = cond_params[:,2].unsqueeze(-1)
 
-    return verts_undeformed,verts_deformed,ym,pr,force,poa
+    if data_aug:
+        ym = torch.cat((ym,ym),dim=0)
+        pr = torch.cat((pr,pr),dim=0)
+        force = torch.cat((force,force),dim=0)
+        poa = torch.cat((poa,poa),dim=0)
 
-def get_meshes(data_path,shape,mode):
+        verts_undeformed_rot_cube_cyl = rotate_pc(verts_undeformed[:145],0,1.57,0)
+        verts_deformed_rot_cube_cyl = rotate_pc(verts_deformed[:145],0,1.57,0)
+
+        verts_undeformed_rot_prism = rotate_pc(verts_undeformed[145:],0,2.0944,0)
+        verts_deformed_rot_prism = rotate_pc(verts_deformed[145:],0,2.0944,0)
+
+        verts_undeformed = torch.cat((verts_undeformed.cuda(),verts_undeformed_rot_cube_cyl.cuda(),verts_undeformed_rot_prism.cuda()),dim=0)
+        verts_deformed = torch.cat((verts_deformed.cuda(),verts_deformed_rot_cube_cyl.cuda(),verts_deformed_rot_prism.cuda()),dim=0)
+
+        # ipdb.set_trace()
+
+    dataset = {}
+    dataset['train'] = [verts_undeformed[train_idx],verts_deformed[train_idx],ym[train_idx],pr[train_idx],force[train_idx],poa[train_idx]]
+    dataset['test'] = [verts_undeformed[test_idx],verts_deformed[test_idx],ym[test_idx],pr[test_idx],force[test_idx],poa[test_idx]]
+
+    return dataset
+
+
+def viz_meshes():
+
+    center = None
+    scale = None
+    verts_list = []
+    faces_list = []
+    path = 'cube_222_sw.obj'
+    verts, faces, _ = load_obj(path)
+    faces = faces.verts_idx
+    verts_list.append(verts)
+    faces_list.append(faces)
+    mesh = get_mesh(verts_list,faces_list)
+    verts    = pytorch3d.ops.sample_points_from_meshes(mesh,num_samples=2000)
+
+    # ipdb.set_trace()
+    if center is None:
+        center = verts.mean(1)
+    # ipdb.set_trace()
+    verts = verts - center.unsqueeze(1).repeat(1,verts.shape[1],1)
+    if scale is None:
+        scale = torch.max(verts.abs().max(1)[0],dim=1)[0].reshape(-1,1,1)
+    verts = verts / scale.repeat(1,verts.shape[1],verts.shape[2])
+    c1 = torch.tensor([[1.,1.,0]]).unsqueeze(0).repeat(1,2000,1)
+
+    viz_pointcloud(verts[0],'pc_undeformed_cyl',c1)
+
+    
+
+
+def get_meshes(data_path,shape,):
 
     deformed_path = data_path+'deformed/{}*.obj'.format(shape)
     undeformed_path = data_path+'undeformed/{}*.obj'.format(shape)
@@ -112,6 +177,8 @@ def get_meshes(data_path,shape,mode):
 
     # ipdb.set_trace()
     verts_undeformed = verts_undeformed.repeat(verts_deformed.shape[0],1,1)
+
+
     # verts_deformed = torch.Tensor(verts_deformed)
 
 
@@ -134,15 +201,23 @@ def train(model,writer,cycle_consistency):
     epoch_loss = 0
     viz_data = True
     opt = optim.Adam(model.parameters(), 5e-5, betas=(0.9, 0.999))
-    # ipdb.set_trace()
-    verts_undeformed_total,verts_deformed_total,ym_total,pr_total,force_total,poa_total = get_dataset(args.data_path,['cube','cyl','prism'],mode='train')
+    # verts_undeformed_total,verts_deformed_total,ym_total,pr_total,force_total,poa_total = get_dataset(args.data_path,['cube','cyl','prism'],)
+    dataset = get_dataset(args.data_path,['cube','cyl','prism'],)
  
-    verts_undeformed_total = verts_undeformed_total.float().cuda()
-    verts_deformed_total = verts_deformed_total.float().cuda()
-    force_total = force_total.float().cuda()
-    poa_total = poa_total.float().cuda()
-    ym_total = ym_total.float().cuda()
-    pr_total = pr_total.float().cuda()
+    # verts_undeformed_total = verts_undeformed_total.float().cuda()
+    # verts_deformed_total = verts_deformed_total.float().cuda()
+    # force_total = force_total.float().cuda()
+    # poa_total = poa_total.float().cuda()
+    # ym_total = ym_total.float().cuda()
+    # pr_total = pr_total.float().cuda()
+
+    verts_undeformed_total = dataset['train'][0].float().cuda()
+    verts_deformed_total = dataset['train'][1].float().cuda()
+    ym_total = dataset['train'][2].float().cuda()
+    pr_total = dataset['train'][3].float().cuda()
+    force_total = dataset['train'][4].float().cuda()
+    poa_total = dataset['train'][5].float().cuda()
+    # ipdb.set_trace()
 
     # for i in range(verts_deformed_total.shape[0]):
     #     viz_pointcloud(verts_deformed_total[i],'pc_deformed_{}'.format(i))
@@ -158,7 +233,7 @@ def train(model,writer,cycle_consistency):
 
     batch_size = 16
 
-    for epoch in range(1000):
+    for epoch in range(300):
         print("Epoch: ",epoch)
         epoch_loss = 0
         for b_idx,b in tqdm.tqdm(enumerate(range(verts_deformed_total.shape[0]//batch_size))):
@@ -172,7 +247,7 @@ def train(model,writer,cycle_consistency):
         # ipdb.set_trace()
         # verts_undeformed, verts_deformed =verts_deformed_total, verts_undeformed_total
 
-            cycle_consistency = False
+            cycle_consistency = cycle_consistency
 
 
             if cycle_consistency:
@@ -186,12 +261,13 @@ def train(model,writer,cycle_consistency):
 
             # ipdb.set_trace()
 
-            if viz_data and b_idx==10 and epoch%10==0:
+            if viz_data and b_idx==6 and epoch%10==0:
                 pass
                 # viz_pointcloud(verts_deformed[10],'pc_deformed_{}'.format(epoch))
-                # viz_pointcloud(verts_deformed[11],'pc_deformed_cyl'.format(epoch))
+                viz_pointcloud(verts_deformed[11],'pc_deformed_cyl_1'.format(epoch),c1)
+                viz_pointcloud(verts_undeformed[11],'pc_undeformed_prism'.format(epoch),c1)
+                ipdb.set_trace()
                 # viz_pointcloud(verts_deformed[12],'pc_deformed_prism'.format(epoch))
-                # viz_pointcloud(verts_undeformed[20],'pc_undeformed_{}'.format(epoch))
                 # viz_pointcloud(predictions[10].detach(),'pc_predicted_{}'.format(epoch))
                 
                 # pc_total = torch.cat((verts_deformed[20],predictions[20].detach()),dim=0)
@@ -201,7 +277,6 @@ def train(model,writer,cycle_consistency):
             # Compute Loss
             # chamfer_loss_ = chamfer_loss(predictions,verts_deformed)
             # kl_loss_ = kl_loss(latent_mean,latent_var)
-            # ipdb.set_trace()
             loss_total = chamfer_loss_#+kl_loss_
             epoch_loss += loss_total
             epoch_loss_list.append(loss_total.item())
@@ -222,33 +297,49 @@ def train(model,writer,cycle_consistency):
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': opt.state_dict(),
                 'loss': epoch_loss,
-                },'./pn++/vae_last.pt')
+                },'./pn++/vae_cc_last.pt')
+
+            # test(model,dataset)
 
 
     return epoch_loss
 
-def test(model,poi=1000,force=1000,ym=0.001,pr=0.47,x=0.,y=0.,z=0.1):
+def test(model,dataset = None,poi=1000,force=1000,ym=0.001,pr=0.47,x=0.,y=0.,z=0.1):
     
     pred = []
     shape_ = 'prism'
-    verts_undeformed_total,verts_deformed_total,ym_total,pr_total,force_total,poa_total = get_dataset(args.data_path,[shape_])
+    # verts_undeformed_total,verts_deformed_total,ym_total,pr_total,force_total,poa_total = get_dataset(args.data_path,[shape_])
  
-    verts_undeformed_total = verts_undeformed_total.float().cuda()
-    verts_deformed_total = verts_deformed_total.float().cuda()
-    force_total = force_total.float().cuda()
-    poa_total = poa_total.float().cuda()
-    ym_total = ym_total.float().cuda()
-    pr_total = pr_total.float().cuda()
+    # verts_undeformed_total = verts_undeformed_total.float().cuda()
+    # verts_deformed_total = verts_deformed_total.float().cuda()
+    # force_total = force_total.float().cuda()
+    # poa_total = poa_total.float().cuda()
+    # ym_total = ym_total.float().cuda()
+    # pr_total = pr_total.float().cuda()
 
-    verts_undeformed = verts_undeformed_total[0].unsqueeze(0)
-    verts_deformed   = verts_deformed_total[0].unsqueeze(0)
-    ym               = ym_total[0].unsqueeze(0)
-    poa              = poa_total[0].unsqueeze(0)
-    pr               = pr_total[0].unsqueeze(0)
-    # force            = force_total[0].unsqueeze(0)
-    force            = torch.tensor(0000).reshape(1,1).float().cuda()
-    # ipdb.set_trace()
-    pred,latent_mean,latent_var = model(verts_undeformed, ym,pr,force,poa)
+    # verts_undeformed = verts_undeformed_total[0].unsqueeze(0)
+    # verts_deformed   = verts_deformed_total[0].unsqueeze(0)
+    # ym               = ym_total[0].unsqueeze(0)
+    # poa              = poa_total[0].unsqueeze(0)
+    # pr               = pr_total[0].unsqueeze(0)
+    # # force            = force_total[0].unsqueeze(0)
+    # force            = torch.tensor(0000).reshape(1,1).float().cuda()
+
+    verts_undeformed_total = dataset['test'][0].float().cuda()
+    verts_deformed_total = dataset['test'][1].float().cuda()
+    ym_total = dataset['test'][2].float().cuda()
+    pr_total = dataset['test'][3].float().cuda()
+    force_total = dataset['test'][4].float().cuda()
+    poa_total = dataset['test'][5].float().cuda()
+    
+    for i in range(9):
+        predictions,latent_mean,latent_var = model(verts_undeformed_total[4*i:4*(i+1)], ym_total[4*i:4*(i+1)],pr_total[4*i:4*(i+1)],force_total[4*i:4*(i+1)],poa_total[4*i:4*(i+1)])
+        # ipdb.set_trace()
+        chamfer_loss_ = chamfer_loss(predictions,verts_deformed_total[4*i:4*(i+1)])
+        print("chamfer_loss is: {}".format(chamfer_loss_))
+
+
+    print("pred loss test: ")
 
         # ipdb.set_trace()
         # poi = find_closest_vertex(verts_undeformed, torch.tensor([0.,0.1,0.1]).unsqueeze(0).cuda())
@@ -260,13 +351,13 @@ def test(model,poi=1000,force=1000,ym=0.001,pr=0.47,x=0.,y=0.,z=0.1):
 
     # viz_pointcloud(predictions[0].detach(),'pc_predicted_test_{}'.format(force))
     # viz_pointcloud(verts_undeformed[0],'pc_undeformed')
-    c1 = torch.tensor([[1.,0.,0]]).unsqueeze(0).repeat(1,5000,1)
-    c2 = torch.tensor([[0.,1.,0.]]).unsqueeze(0).repeat(1,5000,1)
-    c3 = torch.tensor([[0.,0.,1.]]).unsqueeze(0).repeat(1,5000,1)
+    # c1 = torch.tensor([[1.,0.,0]]).unsqueeze(0).repeat(1,5000,1)
+    # c2 = torch.tensor([[0.,1.,0.]]).unsqueeze(0).repeat(1,5000,1)
+    # c3 = torch.tensor([[0.,0.,1.]]).unsqueeze(0).repeat(1,5000,1)
     # ipdb.set_trace()
     # color_all = torch.cat((c1,c3),dim=1)
     # pc_total = torch.cat((pred[0],pred[2]),dim=0)
-    viz_pointcloud(pred[0].detach(),'pc_test_{}_{}_0'.format(0,shape_),c2)
+    # viz_pointcloud(pred[0].detach(),'pc_test_{}_{}_0'.format(0,shape_),c2)
     # viz_pointcloud(pred[1],'pc_test_{}'.format(1),c2)
     # viz_pointcloud(pred[2],'pc_test_{}'.format(2),c2)
 
@@ -375,6 +466,7 @@ def create_parser():
 
 
 if __name__ == '__main__':
+    # viz_meshes()
     parser = create_parser()
     args = parser.parse_args()
     writer = SummaryWriter()
@@ -387,14 +479,16 @@ if __name__ == '__main__':
     # train(model)
     # ipdb.set_trace()
     is_test = False
+    pointnet = True
     # model_name = 'vae_cc_last.pt'
-    model_name = './5000p_4layer_decoder/vae_last.pt'
+    model_name = './pn++/vae_cc_last.pt'
     if is_test:
-        model = DeformNet(cycle_consistency=False).cuda()
+        model = DeformNet(cycle_consistency=False,pointnet=pointnet).cuda()
         checkpoint = torch.load(model_name)
         model.load_state_dict(checkpoint['model_state_dict'])
-        test(model)
+        dataset = get_dataset(args.data_path,['cube','cyl','prism'],)
+        test(model,dataset)
     else:
-        cycle_consistency = False
-        model = DeformNet(cycle_consistency=cycle_consistency).cuda()
+        cycle_consistency = True
+        model = DeformNet(cycle_consistency=cycle_consistency,pointnet=pointnet).cuda()
         train(model,writer,cycle_consistency)
