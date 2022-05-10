@@ -16,7 +16,7 @@ import imageio
 import tqdm
 import matplotlib.pyplot as plt
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 def get_device():
 	"""
@@ -29,6 +29,17 @@ def get_device():
 	return device
 
 
+def normalize_mesh(verts,center=None,scale=None):
+
+	if center is None:
+		center = verts.mean(1)
+	# ipdb.set_trace()
+	verts = verts - center.unsqueeze(1).repeat(1,verts.shape[1],1)
+	if scale is None:
+		scale = torch.max(verts.abs().max(1)[0],dim=1)[0].reshape(-1,1,1)
+	verts = verts / scale.repeat(1,verts.shape[1],verts.shape[2])
+	return verts,center,scale
+
 def load_mesh(path):
 
 	# ipdb.set_trace()
@@ -36,19 +47,11 @@ def load_mesh(path):
 	# verts, faces,  = load_ply(path)
 	faces = faces.verts_idx
 	# ipdb.set_trace()
-	center = verts.mean(0)
-	verts = verts - center
-	scale = max(verts.abs().max(0)[0])
-	verts = verts / scale
+	# center = verts.mean(0)
+	# verts = verts - center
+	# scale = max(verts.abs().max(0)[0])
+	# verts = verts / scale
 	return verts, faces
-
-def normalize_pc(verts):
-
-	center = verts.mean(1)
-	verts = verts - center.unsqueeze(1).repeat(1,verts.shape[1],1)
-	scale = torch.max(verts.abs().max(1)[0],dim=1)[0].reshape(-1,1,1)
-	verts = verts / scale.repeat(1,verts.shape[1],verts.shape[2])
-	return verts
 
 def get_mesh(verts,faces):
 	# ipdb.set_trace()
@@ -103,6 +106,8 @@ def viz_pointcloud(point_cloud,name,color=None):
 	
 	image_list = []
 	for az in range(0,360,10):
+		# if az==0:
+		# 	plt.imsave("./{}.jpg".format(name),render_pointcloud(point_cloud,az,color))
 		image_list.append(render_pointcloud(point_cloud,az,color))
 	gif_maker(image_list,name)
 
@@ -182,7 +187,7 @@ def gif_maker(im_list,name=None):
 	if name is None:
 		imageio.mimsave('mesh_turntable_undeformed.gif', my_images, fps=15)
 	else:
-		imageio.mimsave('/home/cobra/abhimanyu_course/deformation/output/{}.gif'.format(name), my_images, fps=15)
+		imageio.mimsave('./output/{}.gif'.format(name), my_images, fps=15)
 
 
 if __name__ == "__main__":
